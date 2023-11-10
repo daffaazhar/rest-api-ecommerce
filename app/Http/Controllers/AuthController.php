@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\LoginUserRequest;
-use App\Http\Requests\StoreUserRequest;
+use App\Http\Requests\LoginRequest;
+use App\Http\Requests\RegisterRequest;
 use App\Models\User;
 use App\Traits\HttpResponses;
 use Illuminate\Http\Request;
@@ -13,43 +13,53 @@ use Illuminate\Support\Facades\Hash;
 class AuthController extends Controller {
     use HttpResponses;
 
-    public function login(LoginUserRequest $request) {
-        $request->validated($request->all());
+    public function login(LoginRequest $request) {
+        $data = $request->validated();
 
-        if (!Auth::attempt($request->only('email', 'password'))) {
-            return $this->error('', 'Credentials doesn\'t match', 401);
+        $user = User::where('email', $data['email'])->first();
+
+        if (!$user || !Hash::check($data['password'], $user->password)) {
+            return $this->error(null, 'Email or password is incorrect!', 401);
         }
 
-        $user = User::where('email', $request->email)->first();
+        $token = $user->createToken('auth_token')->plainTextToken;
+
+        $cookie = cookie('token', $token, 60 * 24);
 
         return $this->success([
             'user' => $user,
-            'token' => $user->createToken('Api Token of ' . $user->name)->plainTextToken
-        ], 'User logged in successfully');
+        ], 'User logged in successfully')->withCookie($cookie);
     }
 
-    public function register(StoreUserRequest $request) {
-        $request->validated($request->all());
+    public function register(RegisterRequest $request) {
+        $data = $request->validated();
 
         $user = User::create([
             'role' => $request->role,
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
-            'number_phone' => $request->number_phone,
+            'name' => $data['name'],
+            'email' => $data['email'],
+            'password' => Hash::make($data['password']),
+            'number_phone' => $data['number_phone'],
         ]);
+
+        $token = $user->createToken('auth_token')->plainTextToken;
+
+        $cookie = cookie('token', $token, 60 * 24);
 
         return $this->success([
             'user' => $user,
-            'token' => $user->createToken('API Token of ' . $user->name)->plainTextToken,
-        ], 'User registered successfully');
+        ], 'User registered successfully')->withCookie($cookie);
     }
 
-    public function logout() {
-        Auth::user()->currentAccessToken()->delete();
+    public function logout(Request $request) {
+        $request->user()->currentAccessToken()->delete();
 
-        return $this->success([
-            'message' => 'You have been successfully logged out.'
-        ]);
+        $cookie = cookie()->forget('token');
+
+        return $this->success(null, 'Logged out successfully!')->withCookie($cookie);
+    }
+
+    public function user(Request $request) {
+        return $this->success($request->user(), 'Data retrieved successfully!', 200);
     }
 }
